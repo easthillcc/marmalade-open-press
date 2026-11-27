@@ -3,20 +3,26 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2026 East Hill
 
+import { existsSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { readFormat, writeExport } from './cliformat.js';
 import { convert } from './convert.js';
 import { exportAs } from './export.js';
 import { exportWarning, formatExportReport } from './exportreport.js';
+import { jsonError, jsonReport } from './jsonreport.js';
 import { render } from './render.js';
 import { loadColourTable } from './table.js';
+import { numberedNames } from './tiff.js';
 import { BANNER } from './version.js';
+import { reportWarnings } from './warnings.js';
 
 const USAGE = [
   BANNER,
   '',
   'Usage: open-press <input.html|url> <output.pdf> [options]',
+  '       open-press mcp                 an MCP server on standard input and output, for AI assistants',
   '',
   '  --profile <file.icc>             the printer\'s CMYK output profile',
   '  --underlay <c,m,y>               percentages of CMY kept under every grey and black, such as 3,2,2',
@@ -25,6 +31,7 @@ const USAGE = [
   '  --format <x4|x1a|x3|tiff>        the output format (default x4); the others need Ghostscript',
   '  --dpi <n>                        resolution of TIFF pages and of flattened pages (default 300)',
   '  --check                          report what was converted and what to look at, and exit with 1 if RGB is left',
+  '  --json                           print the whole report as one JSON object; the other lines go to the error stream',
   '  --version                        print the version',
   '  --help                           print this help',
   '',
@@ -45,15 +52,13 @@ const OPTIONS = /** @type {const} */ ({
   format: { type: 'string' },
   dpi: { type: 'string' },
   check: { type: 'boolean' },
+  json: { type: 'boolean' },
   version: { type: 'boolean' },
   help: { type: 'boolean' },
 });
 
 /** The options whose value may start with a minus sign, which parseArgs would otherwise take for an option. */
 const SIGNED = new Set(['--bleed', '--underlay']);
-
-/** Below this, a photograph may print soft. */
-const MIN_PPI = 300;
 
 /**
  * Joins "--bleed -3" into "--bleed=-3", so that a negative value reaches the check that explains it.
@@ -182,17 +187,7 @@ export function formatReport(report) {
  * @returns {string[]}
  */
 function warnings(report) {
-  const lines = [];
-  if (report.standIn) {
-    lines.push('Warning: the profile is a stand-in, not for press. Ask your printer for theirs and pass it with --profile.');
-  }
-  // Compared rounded, so that the warning never says 300 ppi is below 300.
-  const ppi = report.lowestPpi === null ? null : Math.round(report.lowestPpi.ppi);
-  if (ppi !== null && ppi < MIN_PPI) lines.push(`Warning: image ${report.lowestPpi.image} prints at ${ppi} ppi, below ${MIN_PPI}.`);
-  if (report.type3Fonts.length > 0) {
-    lines.push(`Warning: Type 3 fonts, which some printers refuse: ${report.type3Fonts.join(', ')}.`);
-  }
-  return lines;
+  return reportWarnings(report).map((warning) => `Warning: ${warning.message}`);
 }
 
 /**
@@ -203,19 +198,43 @@ function millimetres(value) {
   return String(Number(value.toFixed(1)));
 }
 
+const ANSI_COLOUR = /\u001b\[[0-9;]*m/g;
+
+/**
+ * One plain line for a failed run: no colour codes, no browser call log, and the folder named when it is missing.
+ * @param {Error & {code?: string}} error
+ * @param {string} output  The output path as the person gave it.
+ * @returns {string}
+ */
+function plainFailure(error, output) {
+  if (error.code === 'ENOENT' && !existsSync(dirname(resolve(output)))) {
+    return `Cannot write ${output}: the folder does not exist.`;
+  }
+  return String(error.message).replace(ANSI_COLOUR, '').split('\n')[0];
+}
+
 /**
  * Runs the command line. Results go to io.out, warnings and errors to io.err.
+ * With --json, io.out gets one JSON object and nothing else, also when the run fails; every other line goes to io.err.
  * @param {string[]} argv
  * @param {{out: (line: string) => void, err: (line: string) => void}} [io]
+ * @param {{render: typeof render}} [steps]  What prints the input to an RGB PDF. Tests give their own, for a PDF
+ *   that Chromium does not write.
  * @returns {Promise<number>} The exit code.
  */
-export async function run(argv, io = { out: console.log, err: console.error }) {
+export async function run(argv, io = { out: console.log, err: console.error }, steps = { render }) {
+  // Read from argv itself, so that a failure to parse the options is reported as JSON too.
+  const json = argv.includes('--json');
+  const fail = (message, shown = message) => {
+    io.err(shown);
+    if (json) io.out(JSON.stringify(jsonError(message), null, 2));
+    return 2;
+  };
   let parsed;
   try {
     parsed = parseArgs({ args: joinSignedValues(argv), allowPositionals: true, options: OPTIONS });
   } catch (error) {
-    io.err(argumentError(error));
-    return 2;
+    return fail(argumentError(error));
   }
   const { values, positionals } = parsed;
   if (values.version) {
@@ -227,15 +246,16 @@ export async function run(argv, io = { out: console.log, err: console.error }) {
     return 0;
   }
   if (positionals.length !== 2) {
-    io.err(USAGE);
-    return 2;
+    return fail('open-press takes an input and an output. See open-press --help.', USAGE);
   }
   const [input, output] = positionals;
+  // With --json the lines for a person move to the error stream, so that the JSON has the output to itself.
+  const say = json ? io.err : io.out;
 
   try {
     const options = await readOptions(values);
     const { format, dpi } = await readFormat(values, output);
-    const { pdf, report } = await convert(await render(input, { bleed: options.bleed }), options);
+    const { pdf, report } = await convert(await steps.render(input, { bleed: options.bleed }), options);
     // A PDF/X-4 is written as convert made it. Any other format goes through exportAs first.
     const exported = format === 'x4' ? null : await exportAs(pdf, format, { dpi });
     if (exported === null) await writeFile(output, pdf);
@@ -246,20 +266,26 @@ export async function run(argv, io = { out: console.log, err: console.error }) {
           + 'Ask your printer for theirs and pass it with --profile.',
       );
     }
-    io.out(wrote);
+    say(wrote);
 
     const rgbLeft = countRgbLeft(report) > 0;
     if (values.check) {
-      io.out(formatReport(report));
-      if (exported !== null) io.out(formatExportReport(exported.report));
-      return rgbLeft ? 1 : 0;
+      say(formatReport(report));
+      if (exported !== null) say(formatExportReport(exported.report));
+    } else {
+      if (rgbLeft) io.err('Some colour was left in RGB. Run again with --check to see what.');
+      const warning = exported === null ? null : exportWarning(exported.report);
+      if (warning !== null) io.err(warning);
     }
-    if (rgbLeft) io.err('Some colour was left in RGB. Run again with --check to see what.');
-    const warning = exported === null ? null : exportWarning(exported.report);
-    if (warning !== null) io.err(warning);
-    return 0;
+    // Only --check turns RGB left into exit code 1. The JSON says which code it was.
+    const exitCode = values.check && rgbLeft ? 1 : 0;
+    if (json) {
+      const names = format === 'tiff' ? numberedNames(output, exported.files.length) : [output];
+      const files = names.map((name) => resolve(name));
+      io.out(JSON.stringify(jsonReport({ report, exported: exported?.report ?? null, format, files, exitCode }), null, 2));
+    }
+    return exitCode;
   } catch (error) {
-    io.err(error.message);
-    return 2;
+    return fail(plainFailure(error, output));
   }
 }

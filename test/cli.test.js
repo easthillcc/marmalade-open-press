@@ -12,6 +12,7 @@ import { PDFDocument } from 'pdf-lib';
 import { formatReport, run } from '../src/cli.js';
 import { GHOSTSCRIPT_MISSING } from '../src/ghostscript.js';
 import { hasGhostscript, withoutGhostscript } from './helpers/ghostscript.js';
+import { LEAVING_RGB } from './helpers/rgbleft.js';
 
 const poster = fileURLToPath(new URL('../examples/poster.html', import.meta.url));
 
@@ -25,13 +26,16 @@ const TWO_PAGES = [
   '<section><p>Veiled</p><div class="veil">Half</div></section>',
 ].join('\n');
 
-/** Runs the command line with its messages collected instead of printed. */
-async function open(...argv) {
+/** Runs the command line with its messages collected instead of printed. `steps` may replace render. */
+async function runCollected(argv, steps) {
   const out = [];
   const err = [];
-  const code = await run(argv, { out: (line) => out.push(line), err: (line) => err.push(line) });
+  const code = await run(argv, { out: (line) => out.push(line), err: (line) => err.push(line) }, steps);
   return { code, out: out.join('\n'), err: err.join('\n') };
 }
+const open = (...argv) => runCollected(argv);
+/** As open, with a PDF that leaves one shading in RGB in place of the page. */
+const openLeavingRgb = (...argv) => runCollected(argv, LEAVING_RGB);
 
 /** A folder inside test/ that git ignores (*.local.*), removed when the test ends. */
 async function scratchFolder(t) {
@@ -174,7 +178,7 @@ test('formatReport warns of a stand-in profile, a soft image and Type 3 fonts, a
       'Images converted: 3',
       'Lowest image resolution: 246 ppi at placed size (image 8, page 2)',
       'Maximum total ink: 224%',
-      'Warning: the profile is a stand-in, not for press. Ask your printer for theirs and pass it with --profile.',
+      'Warning: the profile is a stand-in, not for press. Ask your printer for theirs and give it as the profile.',
       'Warning: image 8 prints at 246 ppi, below 300.',
       'Warning: Type 3 fonts, which some printers refuse: Emoji, font 31.',
       'Left as it was:',
@@ -200,7 +204,7 @@ test('the poster becomes a PDF/X-4, with a warning about the stand-in profile', 
   assert.equal(lines[1], 'Profile: Stand-in CMYK profile, not for press (Marmalade Open Press)');
   assert.equal(lines[2], 'Trim: 148 x 210 mm, bleed 3 mm');
   assert.match(out, /^Lowest image resolution: 246 ppi at placed size \(image \d+, page 1\)$/m);
-  assert.match(out, /^Warning: the profile is a stand-in, not for press\. Ask your printer for theirs and pass it with --profile\.$/m);
+  assert.match(out, /^Warning: the profile is a stand-in, not for press\. Ask your printer for theirs and give it as the profile\.$/m);
   assert.match(out, /^Warning: image \d+ prints at 246 ppi, below 300\.$/m);
   assert.match(out, /Vector colours converted: \d+ \(\d+ neutral, [1-9]\d* from the colour table\)/);
   assert.match(out, /Images converted: 3/);
@@ -252,19 +256,29 @@ test('a box-shadow is a soft mask of greys, and leaves no RGB', async (t) => {
   assert.equal(out.includes('soft mask'), false);
 });
 
-test('RGB left makes --check exit with 1, and is mentioned even without --check', async (t) => {
+test('repeating and conic gradients run in ink, and leave no RGB', async (t) => {
   const folder = await scratchFolder(t);
-  const page = join(folder, 'page.html');
-  const output = join(folder, 'page.pdf');
-  // Chromium writes a conic gradient as a function shading, which is left in RGB.
-  const style = '@page { size: 50mm 50mm; margin: 0 } div { width: 40mm; height: 40mm; background: conic-gradient(#c2532d, #e3a33b, #c2532d) }';
-  await writeFile(page, `<style>${style}</style><div></div>`);
+  const page = join(folder, 'gradients.html');
+  const output = join(folder, 'gradients.pdf');
+  const style = [
+    '@page { size: 50mm 50mm; margin: 0 } div { width: 40mm; height: 12mm }',
+    '.stripes { background: repeating-linear-gradient(45deg, #c2532d 0 2mm, #fff 2mm 4mm) }',
+    '.rings { background: repeating-radial-gradient(circle, #e3a33b 0 1mm, #2d5f8a 1mm 2mm) }',
+    '.wheel { background: conic-gradient(#c2532d, #e3a33b, #c2532d) }',
+  ].join(' ');
+  await writeFile(page, `<style>${style}</style><div class="stripes"></div><div class="rings"></div><div class="wheel"></div>`);
+  const { code, out } = await open(page, output, '--check');
+  assert.equal(code, 0);
+  assert.equal(out.split('\n').at(-1), 'RGB left: none');
+});
 
-  const checked = await open(page, output, '--check');
+test('RGB left makes --check exit with 1, and is mentioned even without --check', async (t) => {
+  const output = join(await scratchFolder(t), 'page.pdf');
+  const checked = await openLeavingRgb('page.html', output, '--check');
   assert.equal(checked.code, 1);
-  assert.match(checked.out, /Left as it was:\n  shading of type 1: .+ \(RGB\)\nRGB left: 1$/);
+  assert.match(checked.out, /Left as it was:\n  shading of type 2, function of type 0: sampled functions are not converted \(RGB\)\nRGB left: 1$/);
 
-  const unchecked = await open(page, output);
+  const unchecked = await openLeavingRgb('page.html', output);
   assert.equal(unchecked.code, 0);
   assert.equal(unchecked.out, `Wrote ${output}.`);
   assert.match(unchecked.err, /Some colour was left in RGB\. Run again with --check to see what\.$/);

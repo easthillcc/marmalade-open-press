@@ -6,7 +6,7 @@ It prints the page with Chromium, converts every colour and image through your p
 
 [![test](https://github.com/easthillcc/marmalade-open-press/actions/workflows/test.yml/badge.svg)](https://github.com/easthillcc/marmalade-open-press/actions/workflows/test.yml)
 
-[Output formats](docs/output-formats.md) · [How it works](docs/how-it-works.md) · [Recipes](docs/recipes.md) · [Comparison with other tools](docs/comparison.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+[Output formats](docs/output-formats.md) · [How it works](docs/how-it-works.md) · [Recipes](docs/recipes.md) · [AI assistants](docs/assistants.md) · [Comparison with other tools](docs/comparison.md) · [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
 
 Marmalade turns a family's week into a printed magazine. This is a small part of what we learned about paper, opened to everyone.
 
@@ -64,6 +64,83 @@ npx playwright install chromium
 
 From the clone, run it as `npx open-press` or `node bin/open-press.js`. The examples below write `open-press` for short.
 
+## Use it with an AI assistant
+
+An assistant can run the press for you. The package has an MCP server, which gives an assistant one tool, `html_to_print_pdf`, and a skill, which teaches one the command line. Either will do, and neither is needed to use the tool by hand.
+
+Both run the package through `npx`, so there is nothing to install first except Chromium, once. Every line names `@latest`, so that `npx` takes the newest version, not one it keeps from an earlier run:
+
+```sh
+npx -y -p marmalade-open-press@latest playwright install chromium
+```
+
+### The MCP server
+
+Claude Code:
+
+```sh
+claude mcp add open-press -- npx -y marmalade-open-press@latest mcp
+```
+
+Codex:
+
+```sh
+codex mcp add open-press -- npx -y marmalade-open-press@latest mcp
+```
+
+Claude Desktop, and any other client that reads an `mcpServers` block:
+
+```json
+{
+  "mcpServers": {
+    "open-press": {
+      "command": "npx",
+      "args": ["-y", "marmalade-open-press@latest", "mcp"]
+    }
+  }
+}
+```
+
+If the client says it cannot find `npx`, give its full path (the output of `which npx`) as `command`. For `x1a`, `x3` and `tiff`, add `"env": { "PATH": "..." }` with the folder that holds `gs`.
+
+Gemini CLI reads the same block from `~/.gemini/settings.json`, or from `.gemini/settings.json` in a project.
+
+In Claude Code the server is yours alone, in the project you add it from: `claude mcp add` keeps it in `~/.claude.json`, under that project. With `--scope user` before the name it is there in every project. With `--scope project` it is written to `.mcp.json` in the project, to share with the people who work on it, and Claude Code asks each of them once to approve it.
+
+Codex keeps the server in `~/.codex/config.toml`, for every project, whatever folder you add it from. `codex mcp list` then shows it as `enabled`: it is set up, not yet started.
+
+Then ask for the file in your own words, such as "make a print-ready PDF of flyer.html with 3 mm of bleed and printer.icc". The tool takes the options of the command line and gives back the report of `--json`. [AI assistants](docs/assistants.md) has every argument.
+
+### The skill
+
+`skills/open-press` is an Agent Skill: a short manual that tells an assistant when to use the tool, how to run it with `npx`, how to read the report and how to mend what it finds. Copy the folder to where your assistant keeps its skills. These lines take it from the npm package, with no clone and nothing installed:
+
+```sh
+cd "$(mktemp -d)"
+tar -xzf "$(npm pack --silent marmalade-open-press@latest)"
+mkdir -p ~/.claude/skills ~/.codex/skills
+cp -R package/skills/open-press ~/.claude/skills/
+cp -R package/skills/open-press ~/.codex/skills/
+```
+
+The first `cp` is for Claude Code and the second for Codex, which reads `~/.agents/skills` as well. Where the package is installed, the folder is at `node_modules/marmalade-open-press/skills/open-press`, and in a clone at `skills/open-press`.
+
+### A note for your project
+
+For an assistant that reads `AGENTS.md` or `CLAUDE.md`, these lines are enough:
+
+```markdown
+## Print files
+
+To make a file for a commercial printer from HTML, use Marmalade Open Press (https://github.com/easthillcc/marmalade-open-press):
+
+    npx -y marmalade-open-press@latest <page.html|url> <out.pdf> --profile <printer.icc> --bleed 3 --json --check
+
+- Standard output is one JSON object. Exit code 0: done. 1: RGB is left in the file, listed in `rgbLeft`. 2: the run failed, and `error` says why.
+- Read `warnings` to the person. Without `--profile` the file is a trial made with a stand-in profile, not for press.
+- For PDF/X-1a add `--format x1a`. A page that uses transparency then becomes one picture, text included.
+```
+
 ## Command line
 
 ```sh
@@ -79,6 +156,7 @@ open-press <input.html|url> <output.pdf> [options]
 | `--format <x4\|x1a\|x3\|tiff>` | The output format. Default `x4`. The others need Ghostscript. See [Output formats](#output-formats). |
 | `--dpi <n>` | With `--format tiff`, the resolution of the pages. With `x1a` and `x3`, the resolution of a page that had to be flattened. Default `300`. |
 | `--check` | Prints a report: what was converted, the trim size and the bleed, the lowest image resolution, and warnings. |
+| `--json` | Prints the whole report as one JSON object on standard output. See [The report as JSON](#the-report-as-json). |
 | `--version` | Prints the version. |
 | `--help` | Prints the usage. |
 
@@ -86,7 +164,7 @@ Exit codes:
 
 - `0`: done.
 - `1`: with `--check`, RGB is left in the file.
-- `2`: wrong usage, the conversion failed, or the format needs Ghostscript and it is not installed.
+- `2`: wrong usage, the conversion failed, Chromium is not installed, or the format needs Ghostscript and it is not installed.
 
 Warnings never change the exit code.
 
@@ -101,7 +179,7 @@ Vector colours converted: 27 (20 neutral, 0 from the colour table)
 Images converted: 3
 Lowest image resolution: 246 ppi at placed size (image 8, page 1)
 Maximum total ink: 224%
-Warning: the profile is a stand-in, not for press. Ask your printer for theirs and pass it with --profile.
+Warning: the profile is a stand-in, not for press. Ask your printer for theirs and give it as the profile.
 Warning: image 8 prints at 246 ppi, below 300.
 RGB left: none
 ```
@@ -119,6 +197,60 @@ open-press examples/back-cover.html examples/back-cover.pdf --check
 The example PDFs are in `examples/`, `poster-x1a.pdf` among them, all built with the stand-in profile.
 
 Without `--profile` the tool uses the built-in `cmyk` profile as a stand-in, and it says so on every run. The printer's own profile is the one that counts. Ask for it, then pass it with `--profile`. The PDF says so too: its output intent is named `Stand-in CMYK profile, not for press (Marmalade Open Press)`, so a preflight that reads it will not take it for the printer's.
+
+### The report as JSON
+
+`--json` prints the report as one JSON object on standard output, for a script or an assistant to read. Everything else the tool says goes to the error stream, so standard output holds the JSON and nothing more. It works with or without `--check`, and the exit codes are as before: RGB left gives 1 only with `--check`.
+
+```sh
+open-press examples/poster.html examples/poster.pdf --bleed 3 --json
+```
+
+```json
+{
+  "tool": "Marmalade Open Press",
+  "version": "1.1.0",
+  "ok": true,
+  "exitCode": 0,
+  "format": "x4",
+  "files": ["/home/you/open-press/examples/poster.pdf"],
+  "profile": "Stand-in CMYK profile, not for press (Marmalade Open Press)",
+  "standIn": true,
+  "trim": { "width": 148, "height": 210 },
+  "bleed": 3,
+  "vectors": 27,
+  "neutrals": 20,
+  "tableHits": 0,
+  "images": 3,
+  "maxInk": 223.53,
+  "lowestPpi": { "ppi": 246.2, "image": 8, "page": 1 },
+  "type3Fonts": [],
+  "left": [],
+  "rgbLeft": [],
+  "warnings": [
+    {
+      "code": "stand-in-profile",
+      "message": "The profile is a stand-in, not for press. Ask your printer for theirs and give it as the profile."
+    },
+    { "code": "low-resolution", "message": "Image 8 prints at 246 ppi, below 300." }
+  ],
+  "export": null
+}
+```
+
+The tool prints it with one value per line; it is folded here to save paper. Most fields are those of the library's report, described under [Library](#library). These are added:
+
+| Field | Meaning |
+|---|---|
+| `tool`, `version` | What wrote the file. |
+| `ok` | `true` when the run finished and nothing is left in RGB. |
+| `exitCode` | The exit code of the run. |
+| `format`, `files` | The format, and the files written, as absolute paths. |
+| `rgbLeft` | What is still RGB, by name. Empty when all is well. |
+| `warnings` | Each warning as a `code` and a `message`. The codes are `stand-in-profile`, `low-resolution`, `type3-fonts` and `text-to-pixels`. |
+| `export` | For `x1a`, `x3` and `tiff`, the report of the export: transparency, and what was flattened. `null` for `x4`. |
+
+A run that fails prints `{ "tool": ..., "version": ..., "ok": false, "exitCode": 2, "error": "..." }`, so standard output is JSON either way. [AI assistants](docs/assistants.md) has the whole shape.
 
 ### Page size and bleed
 
@@ -315,7 +447,7 @@ Use it with `--colours classic`, or your own table with `--colours my-table.json
 
 A table entry wins over every other rule, and its inks are printed exactly as written. That has one consequence to know about. Black text listed in a table, as `#000000` is in `classic`, gets no underlay. If you want the underlay under your black text, leave `#000000` out of your table.
 
-A colour matches an entry when each channel is within 1.5 levels of the entry's hex value, channel by channel. The table applies to text, shapes and the ends of gradients. It does not apply to the pixels inside images.
+A colour matches an entry when each channel is within 1.5 levels of the entry's hex value, channel by channel. The table applies to text, shapes and the colour stops of gradients. It does not apply to the pixels inside images.
 
 ## Limits
 
@@ -324,8 +456,8 @@ Every tool has a list of things it will not do. This is ours, and it is shorter 
 - Flate images and vector colours are read as sRGB, whatever ICC profile their colour space names. A JPEG with its own embedded profile is converted using that profile. Flat graphics inside an image are not matched against the colour table.
 - A form or pattern with no `/Resources` of its own, which borrows the page's, is not followed for named colour spaces.
 - Converted images are stored as lossless raw CMYK. The files are larger than the JPEGs they came from.
-- Gradients are converted at their ends, and the ink between the ends is interpolated.
-- Shadings that are not blends between two colours, such as conic gradients, mesh shadings and shadings with a background, are left in RGB and reported. Inline images are left and reported too.
+- Gradients are converted at their colour stops, and the ink between two stops is interpolated.
+- Linear, radial, repeating and conic gradients are all converted. Chromium writes the repeating and conic ones as small PostScript programs, and only the programs it writes are read. Any other function, a mesh shading and a shading with a background are left in RGB, and the report names the shading type and the function type. Inline images are left and reported too.
 - Colour space state is tracked within one content stream, not across the several streams a page may have.
 - For PDF/X-1a and PDF/X-3, a page that uses transparency becomes one image, text included. See [Output formats](#output-formats).
 - Only an `@page` rule without a selector sets the exact size. A page sized by `@page :first` or by a named page keeps Chromium's rounding, which is up to about 0.6 pt. A size written with `var()`, or with a relative unit such as `em`, inside `calc()` or not, is not read either, and keeps Chromium's rounding. A `calc()` of absolute units, such as `calc(148mm + 6mm)`, is read.

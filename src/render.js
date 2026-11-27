@@ -19,6 +19,22 @@ import { VERSION } from './version.js';
  *   printed on. Default 0. A page that names its own size keeps it, because its bleed is already part of it.
  */
 
+/** What is said when Playwright has no Chromium to launch. One line, with the way out. @type {string} */
+export const CHROMIUM_MISSING = 'Chromium is not installed for Playwright. Install it with "npx playwright install chromium" in a project that has this package, or with "npx -y -p marmalade-open-press playwright install chromium" when it runs through npx.';
+
+/**
+ * Starts Chromium. Playwright's own message for a missing browser is a box of several lines, so one plain line replaces it.
+ * @returns {Promise<import('playwright').Browser>}
+ */
+async function launchChromium() {
+  try {
+    return await chromium.launch();
+  } catch (error) {
+    if (/Executable doesn't exist/.test(error.message)) throw new Error(CHROMIUM_MISSING, { cause: error });
+    throw error;
+  }
+}
+
 /**
  * Works out what Chromium should open for an input.
  *
@@ -52,7 +68,7 @@ export async function render(input, options = {}) {
     });
   }
 
-  const browser = await chromium.launch();
+  const browser = await launchChromium();
   try {
     const page = await browser.newPage();
     // 'networkidle' so images and web fonts have arrived before the page is printed.

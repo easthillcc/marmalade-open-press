@@ -66,7 +66,7 @@ The brand book says the orange is 0/60/100/0. Write it in a colour table against
 [{ "name": "Brand orange", "hex": "#F07D00", "cmyk": [0, 60, 100, 0] }]
 ```
 
-The table applies to text, shapes and gradient ends, not to pixels inside images.
+The table applies to text, shapes and gradient stops, not to pixels inside images.
 
 ## The printer wants PDF/X-1a
 
@@ -122,6 +122,41 @@ const { pdf } = await convert(rgb, { profile: 'printer.icc' });
 ```sh
 open-press page.html page.pdf --profile printer.icc --check || exit 1
 ```
+
+## Read the report from a script
+
+`--json` prints the report as one JSON object on standard output and keeps everything else on the error stream, so it pipes cleanly:
+
+```sh
+open-press page.html page.pdf --profile printer.icc --json | jq '{ ok, files, maxInk, warnings: [.warnings[].code] }'
+```
+
+From Node:
+
+```js
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const run = promisify(execFile);
+const { stdout } = await run('npx', ['open-press', 'page.html', 'page.pdf', '--profile', 'printer.icc', '--json']);
+const report = JSON.parse(stdout);
+if (!report.ok) throw new Error(`RGB left: ${report.rgbLeft.join('; ')}`);
+if (report.maxInk > 300) console.warn(`Total ink reaches ${report.maxInk}%.`);
+```
+
+A run that fails prints JSON too, with `ok: false` and an `error`, and exits with 2. With `--check` as well, RGB left exits with 1, and `execFile` rejects; the JSON is then in the error's `stdout`.
+
+## Let an AI assistant make the file
+
+Give the assistant the tool once:
+
+```sh
+claude mcp add open-press -- npx -y marmalade-open-press@latest mcp
+```
+
+Then say what you want and what the printer told you: "Make a print-ready PDF of flyer.html, A5 with 3 mm of bleed, with the profile in print/printer.icc. The printer wants PDF/X-1a." The assistant calls `html_to_print_pdf`, reads the report, and should tell you about anything in `warnings`. If it says the profile is a stand-in, it was not given yours. The README has the same line for Codex, and the block for other clients; [AI assistants](assistants.md) has the tool's arguments.
+
+An assistant without MCP can use the command line with `--json`. The skill in `skills/open-press` tells it how.
 
 ## Where to get a profile
 

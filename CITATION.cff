@@ -11,7 +11,7 @@ abstract: >-
 authors:
   - name: East Hill
     website: https://marmalade.family
-version: 1.0.1
+version: 1.1.0
 license: MIT
 repository-code: https://github.com/easthillcc/marmalade-open-press
 url: https://github.com/easthillcc/marmalade-open-press

@@ -20,6 +20,12 @@ The tool reads files and pages you give it and writes PDFs and TIFFs. Problems w
 
 Ghostscript is a separate program with its own security record. Keep it up to date.
 
+## The MCP server
+
+`open-press mcp` lets an AI assistant run the tool. It does what the command line does and no more, but the one who chooses what to open and where to write is now the assistant. It opens any page it is given, reads any profile or colour table it is given, and writes the output at any path it is given, over a file that is already there. It is not confined to a folder. Give it to an assistant you would let run the command line, and keep your client's approval of tool calls switched on if it has one.
+
+The server talks on standard input and output only. It opens no port and makes no network request of its own.
+
 ## Supported versions
 
 The latest release gets fixes. Older ones do not.

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.easthillcc/marmalade-open-press",
+  "title": "Marmalade Open Press",
+  "description": "HTML to print-ready CMYK PDF/X-4, PDF/X-1a, PDF/X-3 or TIFF, with K-only greys. Made by Marmalade.",
+  "version": "1.1.0",
+  "websiteUrl": "https://marmalade.family",
+  "repository": {
+    "url": "https://github.com/easthillcc/marmalade-open-press",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "marmalade-open-press",
+      "version": "1.1.0",
+      "runtimeHint": "npx",
+      "transport": {
+        "type": "stdio"
+      },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "mcp"
+        }
+      ]
+    }
+  ]
+}

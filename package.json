@@ -1,7 +1,8 @@
 {
   "name": "marmalade-open-press",
-  "version": "1.0.1",
-  "description": "Marmalade Open Press: HTML to print-ready CMYK PDF/X-4 for Node.js, with K-only greys and clean blacks on the black plate. Also PDF/X-1a, PDF/X-3 and CMYK TIFF. Made by Marmalade (https://marmalade.family).",
+  "version": "1.1.0",
+  "mcpName": "io.github.easthillcc/marmalade-open-press",
+  "description": "Marmalade Open Press: HTML to print-ready CMYK PDF/X-4 for Node.js, with K-only greys and clean blacks on the black plate. Also PDF/X-1a, PDF/X-3 and CMYK TIFF, a JSON report, and an MCP server and a skill for AI assistants. Made by Marmalade (https://marmalade.family).",
   "type": "module",
   "bin": {
     "open-press": "bin/open-press.js"
@@ -11,6 +12,7 @@
     "bin",
     "src",
     "presets",
+    "skills",
     "NOTICE",
     "CHANGELOG.md"
   ],
@@ -50,6 +52,12 @@
     "ghostscript",
     "tiff",
     "cli",
+    "json",
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "agent-skills",
+    "ai-agents",
     "marmalade"
   ],
   "license": "MIT",

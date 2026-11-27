@@ -44,6 +44,7 @@ Without Ghostscript, the tests that need it are skipped, not failed. CI runs the
 | `src/convert.js` | RGB PDF to CMYK PDF/X-4: the order of the steps. |
 | `src/colour.js` | The four rules that choose the inks of a vector colour. |
 | `src/content.js`, `src/shadings.js`, `src/images.js` | Content streams, gradients and images. |
+| `src/calculator.js` | The PostScript programs Chromium writes for repeating and conic gradients, split into words and run. |
 | `src/profile.js` | The ICC profile and the black ramp. |
 | `src/pdfx.js`, `src/pdfx13.js` | The PDF/X-4 dressing, and the PDF/X-1a and PDF/X-3 dressing. |
 | `src/export.js`, `src/flatten.js`, `src/tiff.js` | The other formats, through Ghostscript. |

@@ -2,6 +2,21 @@
 
 Marmalade Open Press, made by [Marmalade](https://marmalade.family).
 
+## 1.1.0
+
+For those who print with an assistant at their elbow.
+
+- `--json` prints the whole report as one JSON object on standard output, with or without `--check`. The lines for a person move to the error stream. A run that fails prints a JSON object too, with its `error`. The exit codes are as before.
+- The JSON adds to the report: `ok`, `exitCode`, `format`, `files` as absolute paths, `rgbLeft`, and `warnings` as a code and a message each. The codes are `stand-in-profile`, `low-resolution`, `type3-fonts` and `text-to-pixels`.
+- `open-press mcp` is a Model Context Protocol server on standard input and output, with one tool, `html_to_print_pdf`. It takes the options of the command line and returns the JSON report. It is written on Node's own modules, so the package has no new dependency.
+- `skills/open-press` is an Agent Skill for an assistant that uses the command line: when to use the tool, how to run it with `npx`, how to read the report and how to mend what it finds. It is in the npm package, and the README has the lines that copy it into place from there, with no clone and nothing installed.
+- `server.json`, and `mcpName` in package.json, describe the server for the MCP Registry.
+- When Chromium is not installed, one plain line says so and how to install it, in place of Playwright's box. The exit code is 2, as before.
+- README: "Use it with an AI assistant", with the lines for Claude Code, Codex, Claude Desktop and Gemini CLI, and "The report as JSON". New page: `docs/assistants.md`. Two recipes.
+- Repeating linear and radial gradients, conic gradients, and SVG gradients that repeat or reflect are converted to CMYK. They were left in RGB. Chromium writes them as small PostScript programs: each colour stop now goes through the same rules as any other colour, and the ink between two stops is interpolated, as for a linear gradient.
+- A shading still left in RGB is reported with its shading type and function type, and why, such as `shading of type 2, function of type 0: sampled functions are not converted`.
+- Apart from those gradients, the files it writes are as they were: no ink, box or PDF/X key has moved.
+
 ## 1.0.1
 
 Other output formats, for printers who ask for something older than PDF/X-4.
