@@ -1,15 +1,23 @@
 // Marmalade Open Press, made by Marmalade (https://marmalade.family).
 // Copyright (c) 2026 East Hill. MIT licence.
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 East Hill
 
-import { PDFArray, PDFDict, PDFDocument, PDFRef, PDFStream } from 'pdf-lib';
+import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRef, PDFStream } from 'pdf-lib';
 import { colourRules } from './colour.js';
 import { recolour } from './content.js';
 import { convertImages } from './images.js';
+import { greyMasks, luminosityMaskForms } from './masks.js';
 import { contentStreams, everyDict, isRgbSpace, name, readStream, rgbSpaceNames, writeStream } from './pdf.js';
+import { POINTS_PER_MM } from './pagesize.js';
 import { asPdf16, dressAsPdfX4 } from './pdfx.js';
 import { measureBlackRamp, openProfile, rgbToCmyk } from './profile.js';
+import { lowestResolution } from './resolution.js';
 import { convertShadings } from './shadings.js';
 import { checkColourTable } from './table.js';
+
+/** The name the output intent and the report give the stand-in profile, so that nobody takes it for a printer's. */
+export const STAND_IN_DESCRIPTION = 'Stand-in CMYK profile, not for press (Marmalade Open Press)';
 
 /**
  * @typedef {object} ConvertOptions
@@ -21,7 +29,7 @@ import { checkColourTable } from './table.js';
 
 /**
  * @typedef {object} Report
- * @property {string} profile   The output profile's name.
+ * @property {string} profile   The output profile's name; for the stand-in, STAND_IN_DESCRIPTION.
  * @property {boolean} standIn  True when the built-in stand-in profile was used.
  * @property {number} vectors   Vector colours converted, by any rule.
  * @property {number} neutrals  Of which greys, black and white.
@@ -29,6 +37,10 @@ import { checkColourTable } from './table.js';
  * @property {number} images    Images converted.
  * @property {number} maxInk    The heaviest total ink met, vectors and pixels, in percent.
  * @property {import('./images.js').Left[]} left  What was left as it was.
+ * @property {{width: number, height: number}} trim  The finished size of the first page, from its trim box, in millimetres.
+ * @property {number} bleed     The bleed on every side, in millimetres.
+ * @property {import('./resolution.js').Resolution | null} lowestPpi  The image with the lowest resolution at its placed size.
+ * @property {string[]} type3Fonts  The Type 3 fonts, which some printers refuse.
  */
 
 /**
@@ -50,6 +62,8 @@ export async function convert(pdfBytes, options = {}) {
   const table = checkColourTable(options.colours ?? []);
 
   const profile = await openProfile(options.profile);
+  // The stand-in keeps its own profile bytes; the output intent and the report name it for what it is.
+  const intentProfile = profile.standIn ? { ...profile, description: STAND_IN_DESCRIPTION } : profile;
   const ramp = await measureBlackRamp(profile, underlay);
   const mapColours = colourRules({ table, underlay, ramp, toProfile: (rgbs) => rgbToCmyk(profile, rgbs) });
 
@@ -57,7 +71,7 @@ export async function convert(pdfBytes, options = {}) {
   const doc = await PDFDocument.load(pdfBytes, { updateMetadata: false });
   const { context } = doc;
   const report = {
-    profile: profile.description,
+    profile: intentProfile.description,
     standIn: profile.standIn,
     vectors: 0,
     neutrals: 0,
@@ -71,6 +85,8 @@ export async function convert(pdfBytes, options = {}) {
   const rgbProfiles = rgbProfileRefs(context);
   const maskForms = luminosityMaskForms(context);
   await recolourContents(context, doc, mapColours, report, maskForms);
+  // Before the images: a mask's RGB image becomes grey here, and convertImages then leaves it as it is.
+  report.left.push(...(await greyMasks(doc, maskForms)));
   const shadings = await convertShadings(context, mapColours);
   tally(report, shadings.mapped);
   const images = await convertImages(context, profile);
@@ -81,7 +97,8 @@ export async function convert(pdfBytes, options = {}) {
   report.left.push(...remainingRgbSpaces(context));
   dropUnusedRgbProfiles(context, rgbProfiles);
 
-  dressAsPdfX4(doc, { profile, bleed });
+  dressAsPdfX4(doc, { profile: intentProfile, bleed });
+  Object.assign(report, { trim: trimOf(doc), bleed, lowestPpi: lowestResolution(doc), type3Fonts: type3FontNames(context) });
   return { pdf: asPdf16(await doc.save()), report };
 }
 
@@ -92,13 +109,10 @@ export async function convert(pdfBytes, options = {}) {
  * @param {import('pdf-lib').PDFDocument} doc
  * @param {import('./colour.js').MapColours} mapColours
  * @param {Report} report
- * @param {Set<PDFRef>} maskForms Forms that are the luminosity of a soft mask. Their colour is opacity.
+ * @param {Set<PDFRef>} maskForms Forms that are the luminosity of a soft mask. Their colour is opacity, so greyMasks turns them grey and they are skipped here.
  * @returns {Promise<void>}
  */
 async function recolourContents(context, doc, mapColours, report, maskForms) {
-  for (const ref of maskForms) {
-    report.left.push({ what: `soft mask ${ref.objectNumber}: a luminosity mask, left in its own colour space`, rgb: true });
-  }
   const streams = contentStreams(doc).filter(({ ref }) => !maskForms.has(ref)).map((stream) => ({
     ...stream,
     rgbNames: rgbSpaceNames(context, stream.resources),
@@ -162,22 +176,39 @@ function tally(report, mapped) {
 }
 
 /**
- * The forms that are the luminosity of a soft mask. In such a mask the colour is opacity, not ink.
- * @param {import('pdf-lib').PDFContext} context
- * @returns {Set<PDFRef>}
+ * The finished size of the first page, from its trim box, in millimetres.
+ * @param {import('pdf-lib').PDFDocument} doc
+ * @returns {{width: number, height: number}}
  */
-function luminosityMaskForms(context) {
-  const forms = new Set();
-  for (const dict of everyDict(context)) {
-    const form = dict.get(name('G'));
-    if (dict.get(name('S')) === name('Luminosity') && form instanceof PDFRef) forms.add(form);
+function trimOf(doc) {
+  const [first] = doc.getPages();
+  if (first === undefined) return { width: 0, height: 0 };
+  const { width, height } = first.getTrimBox();
+  return { width: width / POINTS_PER_MM, height: height / POINTS_PER_MM };
+}
+
+/**
+ * The Type 3 fonts of the file, by name. Chromium draws some fonts, colour emoji among them, as Type 3, and some
+ * printers refuse them.
+ * @param {import('pdf-lib').PDFContext} context
+ * @returns {string[]}  Each font's BaseFont, Name or descriptor's FontName, or 'font <object number>' when it has none.
+ */
+function type3FontNames(context) {
+  const names = [];
+  for (const [ref, object] of context.enumerateIndirectObjects()) {
+    if (!(object instanceof PDFDict) || object.get(name('Subtype')) !== name('Type3')) continue;
+    // Chromium names its Type 3 fonts only in the descriptor, such as CAAAAA+AppleColorEmoji.
+    const descriptor = object.lookup(name('FontDescriptor'));
+    const label = object.lookup(name('BaseFont')) ?? object.lookup(name('Name'))
+      ?? (descriptor instanceof PDFDict ? descriptor.lookup(name('FontName')) : undefined);
+    names.push(label instanceof PDFName ? label.decodeText() : `font ${ref.objectNumber}`);
   }
-  return forms;
+  return names;
 }
 
 /**
  * A transparency group names its blending colour space; in RGB it would blend in a space the press does not use.
- * The group of a luminosity mask is left alone, because its colour is opacity.
+ * The group of a luminosity mask is left to greyMasks, which makes it DeviceGray, because its colour is opacity.
  * @param {import('pdf-lib').PDFContext} context
  * @param {Set<PDFRef>} maskForms
  * @returns {void}

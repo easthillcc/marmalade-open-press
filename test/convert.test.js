@@ -1,5 +1,7 @@
 // Marmalade Open Press, made by Marmalade (https://marmalade.family).
 // Copyright (c) 2026 East Hill. MIT licence.
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 East Hill
 
 import assert from 'node:assert/strict';
 import { inflateSync } from 'node:zlib';
@@ -102,8 +104,13 @@ test('greys print in black only, white in nothing, colours through the profile',
 test('the report counts what was converted and the heaviest ink met', async () => {
   const { report } = await convert(await rgbPdf());
   assert.equal(report.standIn, true);
-  assert.equal(typeof report.profile, 'string');
-  assert.ok(report.profile.length > 0);
+  assert.equal(report.profile, 'Stand-in CMYK profile, not for press (Marmalade Open Press)');
+  assert.equal(report.bleed, 0);
+  assert.ok(Math.abs(report.trim.width - (200 * 25.4) / 72) < 1e-3);
+  assert.ok(Math.abs(report.trim.height - (100 * 25.4) / 72) < 1e-3);
+  assert.ok(Math.abs(report.lowestPpi.ppi - 7.2) < 1e-9);
+  assert.equal(report.lowestPpi.page, 1);
+  assert.deepEqual(report.type3Fonts, []);
   assert.equal(report.vectors, 9);
   assert.equal(report.neutrals, 3);
   assert.equal(report.tableHits, 0);
@@ -166,4 +173,67 @@ test('a stream with an inline image is left alone and reported as RGB left', asy
   assert.equal(report.left[0].rgb, true);
   assert.match(report.left[0].what, /^content stream \d+: .*inline image/);
   assert.equal(report.vectors, 3);
+});
+
+test('without a profile, the output intent says it is a stand-in, not for press', async () => {
+  const doc = await load((await convert(await rgbPdf())).pdf);
+  const intent = doc.catalog.lookup(PDFName.of('OutputIntents'), PDFArray).lookup(0, PDFDict);
+  for (const key of ['OutputConditionIdentifier', 'Info']) {
+    assert.equal(intent.lookup(PDFName.of(key)).decodeText(), 'Stand-in CMYK profile, not for press (Marmalade Open Press)');
+  }
+});
+
+test('the report gives the finished size and the bleed in millimetres', async () => {
+  const { report } = await convert(await rgbPdf(), { bleed: 3 });
+  assert.equal(report.bleed, 3);
+  assert.ok(Math.abs(report.trim.width - ((200 * 25.4) / 72 - 6)) < 1e-3);
+  assert.ok(Math.abs(report.trim.height - ((100 * 25.4) / 72 - 6)) < 1e-3);
+});
+
+test('Type 3 fonts are named in the report', async () => {
+  const doc = await PDFDocument.create();
+  const { context } = doc;
+  const page = doc.addPage([100, 100]);
+  const glyph = context.register(context.flateStream('0 0 0 rg 0 0 1 1 re f'));
+  const font = {
+    Type: 'Font', Subtype: 'Type3', FontBBox: [0, 0, 1, 1], FontMatrix: [1, 0, 0, 1, 0, 0], CharProcs: { a: glyph },
+    Encoding: { Type: 'Encoding', Differences: [97, 'a'] }, FirstChar: 97, LastChar: 97, Widths: [1],
+  };
+  const named = context.register(context.obj({ ...font, BaseFont: 'Emoji' }));
+  const unnamed = context.register(context.obj(font));
+  page.node.set(PDFName.of('Resources'), context.obj({ Font: { F0: named, F1: unnamed } }));
+  page.node.set(PDFName.of('Contents'), context.register(context.flateStream('BT /F0 1 Tf (a) Tj /F1 1 Tf (a) Tj ET')));
+  const { report } = await convert(await doc.save());
+  assert.deepEqual(report.type3Fonts, ['Emoji', `font ${unnamed.objectNumber}`]);
+});
+
+test('a luminosity mask turns grey at the same luminosity, with its image, group and backdrop, and nothing is left in RGB', async () => {
+  const doc = await PDFDocument.create();
+  const { context } = doc;
+  const page = doc.addPage([100, 100]);
+  const image = context.register(context.flateStream(Buffer.from([100, 200, 0, 255, 255, 255]), {
+    Type: 'XObject', Subtype: 'Image', Width: 2, Height: 1, ColorSpace: 'DeviceRGB', BitsPerComponent: 8,
+  }));
+  const mask = context.register(context.flateStream('1 0 0 rg 0 0 50 50 re f 0 0 0 RG /Im0 Do', {
+    Type: 'XObject', Subtype: 'Form', BBox: [0, 0, 100, 100],
+    Resources: { XObject: { Im0: image } }, Group: { S: 'Transparency', CS: 'DeviceRGB' },
+  }));
+  page.node.set(PDFName.of('Resources'), context.obj({
+    ExtGState: { GS0: { Type: 'ExtGState', SMask: { Type: 'Mask', S: 'Luminosity', G: mask, BC: [1, 1, 1] } } },
+  }));
+  page.node.set(PDFName.of('Contents'), context.register(context.flateStream('/GS0 gs 0.7608 0.3255 0.1765 rg 0 0 100 100 re f')));
+
+  const { pdf, report } = await convert(await doc.save());
+  assert.deepEqual(report.left, []);
+  const out = await load(pdf);
+  const form = out.context.lookup(mask, PDFRawStream);
+  assert.equal(readStream(form).toString('latin1'), '0.3 g 0 0 50 50 re f 0 G /Im0 Do');
+  assert.equal(form.dict.lookup(PDFName.of('Group'), PDFDict).get(PDFName.of('CS')), PDFName.of('DeviceGray'));
+  const grey = out.context.lookup(image, PDFRawStream);
+  assert.equal(grey.dict.get(PDFName.of('ColorSpace')), PDFName.of('DeviceGray'));
+  assert.deepEqual([...inflateSync(grey.contents)], [148, 255]);
+  const state = out.getPages()[0].node.Resources().lookup(PDFName.of('ExtGState'), PDFDict).lookup(PDFName.of('GS0'), PDFDict);
+  const backdrop = state.lookup(PDFName.of('SMask'), PDFDict).lookup(PDFName.of('BC'), PDFArray);
+  assert.deepEqual(backdrop.asArray().map((n) => n.asNumber()), [1]);
+  assert.match(pageSource(out), /^\/GS0 gs [\d.]+ [\d.]+ [\d.]+ [\d.]+ k/);
 });

@@ -1,0 +1,22 @@
+# Marmalade Open Press, made by Marmalade (https://marmalade.family). Copyright (c) 2026 East Hill. MIT licence.
+name: Something the press should do
+description: A format, an option or a rule that would help you send a file to print.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: What the printer asks for
+      description: The requirement in the printer's own words if you have them, such as "PDF/X-1a, total ink under 300%".
+    validations:
+      required: true
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do today
+      description: The workaround, if there is one.
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like
+      description: An option, a report line, a library function. Keep it as small as it can be.

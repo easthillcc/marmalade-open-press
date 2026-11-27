@@ -1,0 +1,41 @@
+Marmalade Open Press
+Copyright (c) 2026 East Hill
+
+Made by Marmalade, which turns a family's week into a printed magazine.
+https://marmalade.family
+Source: https://github.com/easthillcc/marmalade-open-press
+
+This software is released under the MIT License (see LICENSE). The MIT
+License asks that the copyright notice and the permission notice stay with
+every copy and every substantial portion of the software. Keeping this file
+next to them is a kindness, not a further condition.
+
+If you copy, fork or vendor this code, a line such as the one below, in your
+README or your NOTICE, is welcome:
+
+    Includes Marmalade Open Press, made by Marmalade (https://marmalade.family).
+
+What the software writes into its output
+
+    Every PDF it writes names it as the Producer, in the document information
+    and in the XMP metadata, as "Marmalade Open Press <version>
+    (https://marmalade.family)". A page drawn by the software's own render
+    step also names it as the Creator, as "Marmalade Open Press <version>,
+    with Chromium". Every TIFF page names it in the Software tag, next to
+    Ghostscript. This is the ordinary way a file records the program that
+    made it. Nothing is sent anywhere: the software makes no network request
+    of its own, apart from the page you ask it to open.
+
+Third-party software
+
+    The package depends on, and does not include, these libraries, each under
+    its own licence:
+
+    - pdf-lib, MIT License
+    - Playwright, Apache License 2.0, which downloads Chromium separately
+    - sharp, Apache License 2.0, with libvips under the LGPL 3.0 or later
+
+    The PDF/X-1a, PDF/X-3 and TIFF formats use Ghostscript, if it is
+    installed on the machine. Ghostscript is a separate program under the
+    GNU Affero General Public License. It is not part of this package and is
+    not distributed with it.

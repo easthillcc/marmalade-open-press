@@ -1,0 +1,6 @@
+# Marmalade Open Press, made by Marmalade (https://marmalade.family). Copyright (c) 2026 East Hill. MIT licence.
+blank_issues_enabled: false
+contact_links:
+  - name: Security problem
+    url: https://github.com/easthillcc/marmalade-open-press/security/advisories/new
+    about: Report it privately, not in a public issue. See SECURITY.md.

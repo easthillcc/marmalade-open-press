@@ -1,5 +1,7 @@
 // Marmalade Open Press, made by Marmalade (https://marmalade.family).
 // Copyright (c) 2026 East Hill. MIT licence.
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 East Hill
 
 /** @typedef {{type: 'number' | 'name' | 'string' | 'operator' | 'punctuation', start: number, end: number}} Token */
 
@@ -10,9 +12,14 @@
  */
 
 /**
+ * What a walk writes: the colour space that replaces /DeviceRGB, and the operators that set a fill and a stroke.
+ * @typedef {{space: string, fill: string, stroke: string}} Target
+ */
+
+/**
  * The state of one walk over the operators.
- * @typedef {{source: string, rgbSpaces: Set<string>, edits: Edit[], spaces: {fill: string, stroke: string},
- *            stack: {fill: string, stroke: string}[], unknownRgb: number}} Walk
+ * @typedef {{source: string, rgbSpaces: Set<string>, target: Target, edits: Edit[],
+ *            spaces: {fill: string, stroke: string}, stack: {fill: string, stroke: string}[], unknownRgb: number}} Walk
  */
 
 /** The PDF white-space characters, NUL included, as the PDF specification lists them. */
@@ -23,6 +30,12 @@ const DELIMITERS = new Set(['(', ')', '<', '>', '[', ']', '{', '}', '/', '%']);
 
 /** Chromium writes numbers such as ".5", "-1.25", "+3" and "4."; the operators never look like this. */
 const NUMBER = /^[+-]?(\d+\.?\d*|\.\d+)$/;
+
+/** Colours for the press: four inks, written with k and K. @type {Target} */
+const CMYK = { space: '/DeviceCMYK', fill: 'k', stroke: 'K' };
+
+/** Colours that are opacity, in a luminosity mask: one grey, written with g and G. @type {Target} */
+const GREY = { space: '/DeviceGray', fill: 'g', stroke: 'G' };
 
 /**
  * Splits a content stream into tokens, reporting positions only so the text is never changed.
@@ -136,11 +149,8 @@ function endOfRegularRun(source, start) {
  */
 export async function recolour(source, rgbSpaces, mapColours) {
   const tokens = tokenize(source);
-  // An inline image's binary data cannot be tokenized safely, so the stream is left whole for the caller to report.
-  if (tokens.some((token) => token.type === 'operator' && textOf(source, token) === 'BI')) {
-    return { source, mapped: [], inlineImage: true, leftRgb: 0 };
-  }
-  const { edits, unknownRgb } = collectEdits(source, tokens, rgbSpaces);
+  if (hasInlineImage(source, tokens)) return { source, mapped: [], inlineImage: true, leftRgb: 0 };
+  const { edits, unknownRgb } = collectEdits(source, tokens, rgbSpaces, CMYK);
   const colourEdits = edits.filter((edit) => edit.rgb !== undefined);
   const mapped = await mapColours(colourEdits.map((edit) => edit.rgb));
   const inksByEdit = new Map(colourEdits.map((edit, i) => [edit, mapped[i].cmyk]));
@@ -150,6 +160,48 @@ export async function recolour(source, rgbSpaces, mapColours) {
     return edit.operator === undefined ? inks : `${inks} ${edit.operator}`;
   });
   return { source: splice(source, edits, replacements), mapped, inlineImage: false, leftRgb: unknownRgb };
+}
+
+/**
+ * Rewrites the colours of a luminosity soft mask's content stream to DeviceGray. In such a mask a colour is an
+ * opacity, so it does not go through a profile: each RGB colour becomes the grey of its luminosity, the value PDF
+ * itself takes from it, and the mask gives exactly the opacity it gave before.
+ * @param {string} source            A content stream, latin1.
+ * @param {Set<string>} rgbSpaces    Names of the resource colour spaces that are RGB, with their slash: '/CS0'.
+ * @returns {{source: string, inlineImage: boolean, leftRgb: number}}
+ *   leftRgb counts the colours left as they were because their colour space is not known to be RGB.
+ */
+export function recolourToGrey(source, rgbSpaces) {
+  const tokens = tokenize(source);
+  if (hasInlineImage(source, tokens)) return { source, inlineImage: true, leftRgb: 0 };
+  const { edits, unknownRgb } = collectEdits(source, tokens, rgbSpaces, GREY);
+  const replacements = edits.map((edit) => {
+    if (edit.rgb === undefined) return edit.text;
+    const level = formatLevel(luminosity(edit.rgb));
+    return edit.operator === undefined ? level : `${level} ${edit.operator}`;
+  });
+  return { source: splice(source, edits, replacements), inlineImage: false, leftRgb: unknownRgb };
+}
+
+/**
+ * The luminosity PDF gives an RGB colour, 0.3 R + 0.59 G + 0.11 B: the weights of a luminosity mask, and of
+ * DeviceRGB read as grey.
+ * @param {import('./colour.js').Rgb} rgb  Levels from 0 to 255.
+ * @returns {number}  From 0 to 1.
+ */
+export function luminosity([red, green, blue]) {
+  return (0.3 * red + 0.59 * green + 0.11 * blue) / 255;
+}
+
+/**
+ * An inline image's binary data cannot be tokenized safely, so a stream that holds one is left whole for the
+ * caller to report.
+ * @param {string} source
+ * @param {Token[]} tokens
+ * @returns {boolean}
+ */
+function hasInlineImage(source, tokens) {
+  return tokens.some((token) => token.type === 'operator' && textOf(source, token) === 'BI');
 }
 
 /**
@@ -166,11 +218,12 @@ function textOf(source, token) {
  * @param {string} source
  * @param {Token[]} tokens
  * @param {Set<string>} rgbSpaces
+ * @param {Target} target  What the colours are written as.
  * @returns {Walk}  Its edits, and how many colours were left unknown.
  */
-function collectEdits(source, tokens, rgbSpaces) {
+function collectEdits(source, tokens, rgbSpaces, target) {
   /** @type {Walk} */
-  const walk = { source, rgbSpaces, edits: [], spaces: { fill: 'other', stroke: 'other' }, stack: [], unknownRgb: 0 };
+  const walk = { source, rgbSpaces, target, edits: [], spaces: { fill: 'other', stroke: 'other' }, stack: [], unknownRgb: 0 };
   let operands = [];
   for (const token of tokens) {
     if (token.type === 'operator') {
@@ -243,7 +296,7 @@ function setPaintColour(walk, side, token, operands, numbers) {
     start: operands[0].start,
     end: token.end,
     rgb: rgbOf(numbers),
-    operator: side === 'fill' ? 'k' : 'K',
+    operator: side === 'fill' ? walk.target.fill : walk.target.stroke,
   });
   walk.spaces[side] = isRgb ? 'rgb' : 'gray';
 }
@@ -273,7 +326,7 @@ function setComponentsColour(walk, side, operands, numbers) {
 }
 
 /**
- * Only a single operand names a colour space. /DeviceRGB is rewritten to /DeviceCMYK here; a named RGB space is
+ * Only a single operand names a colour space. /DeviceRGB is rewritten to the target's space here; a named RGB space is
  * left alone because the resources entry is rewritten elsewhere.
  * @param {Walk} walk
  * @param {Token[]} operands
@@ -283,7 +336,7 @@ function colourSpaceKind(walk, operands) {
   if (operands.length !== 1 || operands[0].type !== 'name') return 'other';
   const name = textOf(walk.source, operands[0]);
   if (name === '/DeviceRGB') {
-    walk.edits.push({ start: operands[0].start, end: operands[0].end, text: '/DeviceCMYK' });
+    walk.edits.push({ start: operands[0].start, end: operands[0].end, text: walk.target.space });
     return 'rgb';
   }
   return walk.rgbSpaces.has(name) ? 'rgb' : 'other';
@@ -315,7 +368,16 @@ function rgbOf(numbers) {
  * @returns {string}
  */
 function formatInks(cmyk) {
-  return cmyk.map((percent) => String(Number((percent / 100).toFixed(4)))).join(' ');
+  return cmyk.map((percent) => formatLevel(percent / 100)).join(' ');
+}
+
+/**
+ * Writes a level from 0 to 1 with at most four decimals and no trailing zeros, the form a content stream takes.
+ * @param {number} level
+ * @returns {string}
+ */
+function formatLevel(level) {
+  return String(Number(level.toFixed(4)));
 }
 
 /**

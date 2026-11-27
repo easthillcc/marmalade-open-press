@@ -1,8 +1,11 @@
 // Marmalade Open Press, made by Marmalade (https://marmalade.family).
 // Copyright (c) 2026 East Hill. MIT licence.
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 East Hill
 
 import { inflateSync } from 'node:zlib';
 import { PDFArray, PDFBool, PDFNumber, PDFRawStream, PDFRef } from 'pdf-lib';
+import sharp from 'sharp';
 import { isRgbSpace, name, writeStream } from './pdf.js';
 import { imageToCmyk } from './profile.js';
 
@@ -168,4 +171,48 @@ function heaviestInk(inks) {
     if (total > heaviest) heaviest = total;
   }
   return (heaviest / 255) * 100;
+}
+
+/**
+ * Rewrites an RGB image as DeviceGray, each pixel at its luminosity, 0.3 R + 0.59 G + 0.11 B. It is for the images
+ * of a luminosity soft mask, where a grey is an opacity and the mask must stay exactly as opaque as it was.
+ * @param {import('pdf-lib').PDFContext} context
+ * @param {PDFRef} ref  An image XObject in an RGB colour space.
+ * @returns {Promise<string | null>}  Why the image is left as it is, or null when it was rewritten.
+ */
+export async function greyImage(context, ref) {
+  const stream = context.lookup(ref);
+  const { dict } = stream;
+  const reason = reasonToLeave(context, dict, dict.lookup(name('ColorSpace')));
+  if (reason) return reason;
+  const pixels = await rgbPixels(stream);
+  if (pixels === null) return 'could not be decoded';
+  const count = dict.lookup(name('Width')).asNumber() * dict.lookup(name('Height')).asNumber();
+  if (pixels.length !== count * 3) return 'size does not match its data';
+  // The weights of luminosity() in content.js, written out: a photograph has millions of pixels, so no array per pixel.
+  const grey = Buffer.alloc(count);
+  for (let at = 0; at < count; at += 1) {
+    grey[at] = Math.round(0.3 * pixels[at * 3] + 0.59 * pixels[at * 3 + 1] + 0.11 * pixels[at * 3 + 2]);
+  }
+  dict.set(name('ColorSpace'), name('DeviceGray'));
+  // A JPEG's ColorTransform means nothing once the data is Flate.
+  dict.delete(name('ColorTransform'));
+  writeStream(context, ref, grey);
+  return null;
+}
+
+/**
+ * The three levels of every pixel of an RGB image.
+ * @param {PDFRawStream} stream  An image that passed reasonToLeave.
+ * @returns {Promise<Buffer | null>}  Three bytes per pixel, or null when the data cannot be decoded.
+ */
+async function rgbPixels(stream) {
+  try {
+    if (stream.dict.lookup(name('Filter')) !== name('DCTDecode')) return inflateSync(stream.contents);
+    // sharp decodes the JPEG itself. A JPEG that does not decode to three channels is not the RGB it claims.
+    const { data, info } = await sharp(Buffer.from(stream.contents)).raw().toBuffer({ resolveWithObject: true });
+    return info.channels === 3 ? data : null;
+  } catch {
+    return null;
+  }
 }

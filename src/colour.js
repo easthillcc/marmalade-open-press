@@ -1,5 +1,7 @@
 // Marmalade Open Press, made by Marmalade (https://marmalade.family).
 // Copyright (c) 2026 East Hill. MIT licence.
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 East Hill
 
 /** @typedef {[number, number, number]} Rgb  Red, green, blue, each 0..255. */
 /** @typedef {[number, number, number, number]} Cmyk  Cyan, magenta, yellow, black, each in percent. */

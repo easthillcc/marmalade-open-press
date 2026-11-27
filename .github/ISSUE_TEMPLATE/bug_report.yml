@@ -1,0 +1,48 @@
+# Marmalade Open Press, made by Marmalade (https://marmalade.family). Copyright (c) 2026 East Hill. MIT licence.
+name: Something came out wrong
+description: A colour, a plate, a box or a format that is not what it should be.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. The smallest HTML page that shows the problem is worth more than any description of it.
+        Do not attach a printer's ICC profile you are not allowed to share; say which one it is instead.
+  - type: textarea
+    id: command
+    attributes:
+      label: The command, or the library call
+      description: Exactly as you ran it.
+      render: sh
+      placeholder: open-press page.html page.pdf --profile printer.icc --format x1a --check
+    validations:
+      required: true
+  - type: textarea
+    id: check
+    attributes:
+      label: What --check printed
+      description: Run the same command with --check and paste every line.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and what you got
+      description: For example "the grey text is on all four plates" or "the printer's preflight says the trim box is missing".
+    validations:
+      required: true
+  - type: textarea
+    id: page
+    attributes:
+      label: The smallest page that shows it
+      description: Paste the HTML, or attach it. A URL is fine if it is public.
+      render: html
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: The output of open-press --version, node --version and gs --version, and your operating system.
+      placeholder: "Marmalade Open Press 1.0.1, Node 22.17.0, Ghostscript 10.06.0, macOS 15"
+    validations:
+      required: true

@@ -2,3 +2,10 @@ node_modules/
 .DS_Store
 *.local.*
 docs/PLAN.md
+docs/PLAN-1.0.1.md
+*.local-*.tif
+tmp.local/
+probe.local/
+verify.local/
+out.local/
+*.local-*.pgm

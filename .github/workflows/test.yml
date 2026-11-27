@@ -1,0 +1,66 @@
+# Marmalade Open Press, made by Marmalade (https://marmalade.family). Copyright (c) 2026 East Hill. MIT licence.
+#
+# Runs npm test on Node 22: on Linux and macOS with Ghostscript, and once on Linux without it,
+# to prove that PDF/X-4 still needs nothing else and that the other formats fail politely.
+
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }}, ${{ matrix.ghostscript && 'with' || 'without' }} Ghostscript
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            ghostscript: true
+          - os: macos-latest
+            ghostscript: true
+          - os: ubuntu-latest
+            ghostscript: false
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Ghostscript (Linux)
+        if: matrix.ghostscript && runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ghostscript
+
+      - name: Install Ghostscript (macOS)
+        if: matrix.ghostscript && runner.os == 'macOS'
+        run: brew install ghostscript
+
+      - name: Ghostscript version
+        if: matrix.ghostscript
+        run: gs --version
+
+      - run: npm ci
+
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+
+      - name: Test
+        run: npm test
+        env:
+          # Without Ghostscript, the tool is pointed at a program that does not exist,
+          # so the Ghostscript tests skip and the "not installed" paths are tested.
+          OPEN_PRESS_GS: ${{ !matrix.ghostscript && 'no-such-ghostscript' || '' }}

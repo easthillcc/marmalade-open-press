@@ -1,5 +1,7 @@
 // Marmalade Open Press, made by Marmalade (https://marmalade.family).
 // Copyright (c) 2026 East Hill. MIT licence.
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 East Hill
 
 import { randomBytes, randomUUID } from 'node:crypto';
 import { PDFDict, PDFHexString, PDFName, PDFString } from 'pdf-lib';
@@ -70,10 +72,29 @@ export function dressAsPdfX4(doc, { profile, bleed }) {
  * @returns {Uint8Array} The same bytes, header set to %PDF-1.6.
  */
 export function asPdf16(bytes) {
+  return withMinorVersion(bytes, '6');
+}
+
+/**
+ * Makes PDF/X-1a and PDF/X-3 bytes PDF 1.3, the version those two standards ask for. The file must have been
+ * saved without object streams, which PDF 1.3 does not have.
+ * @param {Uint8Array} bytes A saved PDF.
+ * @returns {Uint8Array} The same bytes, header set to %PDF-1.3.
+ */
+export function asPdf13(bytes) {
+  return withMinorVersion(bytes, '3');
+}
+
+/**
+ * @param {Uint8Array} bytes A saved PDF.
+ * @param {string} digit The digit after "%PDF-1.".
+ * @returns {Uint8Array} The same bytes, changed in place.
+ */
+function withMinorVersion(bytes, digit) {
   if (Buffer.from(bytes.subarray(0, 7)).toString('latin1') !== '%PDF-1.') {
     throw new Error('This does not look like a PDF.');
   }
-  bytes[7] = '6'.charCodeAt(0);
+  bytes[7] = digit.charCodeAt(0);
   return bytes;
 }
 
@@ -120,7 +141,7 @@ function addTrailerId(doc) {
  * @param {{bytes: Uint8Array, description: string}} profile
  * @returns {void}
  */
-function addOutputIntent(doc, profile) {
+export function addOutputIntent(doc, profile) {
   const { context } = doc;
   const condition = PDFHexString.fromText(profile.description);
   const destination = context.register(context.flateStream(profile.bytes, { N: 4 }));

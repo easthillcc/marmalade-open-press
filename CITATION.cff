@@ -1,0 +1,30 @@
+# Marmalade Open Press, made by Marmalade (https://marmalade.family). Copyright (c) 2026 East Hill. MIT licence.
+cff-version: 1.2.0
+message: If you use this software in your work, please cite it as below.
+type: software
+title: Marmalade Open Press
+abstract: >-
+  A Node tool and library that turns an HTML page into a print-ready CMYK PDF/X-4,
+  converted through the printer's ICC profile, with greys and blacks on the black plate alone
+  and an optional rich-black underlay. It also writes PDF/X-1a, PDF/X-3 and CMYK TIFF through Ghostscript.
+  Made by Marmalade, the app that turns a family's week into a printed magazine.
+authors:
+  - name: East Hill
+    website: https://marmalade.family
+version: 1.0.1
+license: MIT
+repository-code: https://github.com/easthillcc/marmalade-open-press
+url: https://github.com/easthillcc/marmalade-open-press
+keywords:
+  - CMYK
+  - PDF/X-4
+  - PDF/X-1a
+  - PDF/X-3
+  - HTML to PDF
+  - prepress
+  - ICC profile
+  - rich black
+  - Chromium
+  - Node.js
+  - K-only
+  - Marmalade

@@ -1,7 +1,7 @@
 {
   "name": "marmalade-open-press",
-  "version": "0.1.0",
-  "description": "Marmalade Open Press: turn an HTML page into a print-ready CMYK PDF/X-4, with clean blacks. Made by Marmalade (https://marmalade.family).",
+  "version": "1.0.1",
+  "description": "Marmalade Open Press: HTML to print-ready CMYK PDF/X-4 for Node.js, with K-only greys and clean blacks on the black plate. Also PDF/X-1a, PDF/X-3 and CMYK TIFF. Made by Marmalade (https://marmalade.family).",
   "type": "module",
   "bin": {
     "open-press": "bin/open-press.js"
@@ -10,25 +10,46 @@
   "files": [
     "bin",
     "src",
-    "presets"
+    "presets",
+    "NOTICE",
+    "CHANGELOG.md"
   ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "test": "node --test",
-    "example": "node bin/open-press.js examples/poster.html examples/poster.pdf --bleed 3 --check && node bin/open-press.js examples/back-cover.html examples/back-cover.pdf --check"
+    "example": "node bin/open-press.js examples/poster.html examples/poster.pdf --bleed 3 --check && node bin/open-press.js examples/back-cover.html examples/back-cover.pdf --check",
+    "example:x1a": "node bin/open-press.js examples/poster.html examples/poster-x1a.pdf --bleed 3 --format x1a --check"
   },
   "keywords": [
     "cmyk",
+    "cmyk-pdf",
     "pdf",
     "pdf-x",
+    "pdfx",
     "pdf/x-4",
+    "pdf/x-1a",
+    "pdf/x-3",
+    "html-to-pdf",
+    "html-to-cmyk",
     "print",
+    "print-ready",
     "prepress",
     "rich-black",
-    "html-to-pdf",
+    "k-only",
+    "black-plate",
     "icc",
+    "icc-profile",
+    "color-management",
+    "colour-management",
+    "output-intent",
+    "chromium",
+    "playwright",
+    "puppeteer",
+    "ghostscript",
+    "tiff",
+    "cli",
     "marmalade"
   ],
   "license": "MIT",
@@ -38,6 +59,9 @@
     "sharp": "0.35.5"
   },
   "homepage": "https://marmalade.family",
+  "bugs": {
+    "url": "https://github.com/easthillcc/marmalade-open-press/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/easthillcc/marmalade-open-press.git"

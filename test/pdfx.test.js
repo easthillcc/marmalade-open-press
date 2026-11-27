@@ -1,11 +1,13 @@
 // Marmalade Open Press, made by Marmalade (https://marmalade.family).
 // Copyright (c) 2026 East Hill. MIT licence.
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 East Hill
 
 import assert from 'node:assert/strict';
 import { inflateSync } from 'node:zlib';
 import { test } from 'node:test';
 import { PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream } from 'pdf-lib';
-import { asPdf16, dressAsPdfX4, xmpPacket } from '../src/pdfx.js';
+import { addOutputIntent, asPdf13, asPdf16, dressAsPdfX4, xmpPacket } from '../src/pdfx.js';
 import { PRODUCER } from '../src/version.js';
 
 /** Enough of a profile for the output intent: pdfx.js only reads its bytes and its description. */
@@ -151,4 +153,25 @@ test('a bleed that leaves no page is refused', async () => {
   const doc = await PDFDocument.create();
   doc.addPage([20, 20]);
   assert.throws(() => dressAsPdfX4(doc, { profile, bleed: 4 }), /bleed/);
+});
+
+test('asPdf13 turns the header into PDF 1.3 and refuses what is not a PDF', () => {
+  const bytes = new Uint8Array(Buffer.from('%PDF-1.7\n%rest', 'latin1'));
+  const result = asPdf13(bytes);
+  assert.equal(result, bytes);
+  assert.equal(Buffer.from(result).toString('latin1'), '%PDF-1.3\n%rest');
+  assert.throws(() => asPdf13(new Uint8Array(Buffer.from('<html></html>'))), /PDF/);
+});
+
+test('addOutputIntent works on its own, and leaves one output intent however often it is called', async () => {
+  const doc = await PDFDocument.create();
+  doc.addPage([200, 100]);
+  addOutputIntent(doc, { bytes: Buffer.from('a first profile'), description: 'First' });
+  addOutputIntent(doc, profile);
+  const intents = doc.catalog.lookup(PDFName.of('OutputIntents'), PDFArray);
+  assert.equal(intents.size(), 1);
+  const intent = intents.lookup(0, PDFDict);
+  assert.equal(text(intent, 'OutputConditionIdentifier'), 'Example Coated (v2)');
+  const embedded = intent.lookup(PDFName.of('DestOutputProfile'), PDFRawStream);
+  assert.equal(inflateSync(embedded.contents).toString(), 'not a real profile');
 });
