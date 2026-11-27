@@ -1,0 +1,49 @@
+{
+  "name": "marmalade-open-press",
+  "version": "0.1.0",
+  "description": "Marmalade Open Press: turn an HTML page into a print-ready CMYK PDF/X-4, with clean blacks. Made by Marmalade (https://marmalade.family).",
+  "type": "module",
+  "bin": {
+    "open-press": "bin/open-press.js"
+  },
+  "exports": "./src/index.js",
+  "files": [
+    "bin",
+    "src",
+    "presets"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test",
+    "example": "node bin/open-press.js examples/poster.html examples/poster.pdf --bleed 3 --check && node bin/open-press.js examples/back-cover.html examples/back-cover.pdf --check"
+  },
+  "keywords": [
+    "cmyk",
+    "pdf",
+    "pdf-x",
+    "pdf/x-4",
+    "print",
+    "prepress",
+    "rich-black",
+    "html-to-pdf",
+    "icc",
+    "marmalade"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "pdf-lib": "1.17.1",
+    "playwright": "1.65.0",
+    "sharp": "0.35.5"
+  },
+  "homepage": "https://marmalade.family",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/easthillcc/marmalade-open-press.git"
+  },
+  "author": {
+    "name": "East Hill",
+    "url": "https://marmalade.family"
+  }
+}

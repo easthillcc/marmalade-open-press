@@ -1,0 +1,6 @@
+[
+  { "name": "Text black", "hex": "#000000", "cmyk": [0, 0, 0, 100] },
+  { "name": "Paper white", "hex": "#FFFFFF", "cmyk": [0, 0, 0, 0] },
+  { "name": "Rich black for large type", "hex": "#0A0A0A", "cmyk": [60, 40, 40, 100] },
+  { "name": "Process cyan", "hex": "#00AEEF", "cmyk": [100, 0, 0, 0] }
+]
