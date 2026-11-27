@@ -39,3 +39,9 @@ Third-party software
     installed on the machine. Ghostscript is a separate program under the
     GNU Affero General Public License. It is not part of this package and is
     not distributed with it.
+
+    Without --profile, the software uses the CMYK profile that libvips
+    carries as a stand-in, "Chemical proof", and embeds it in the PDF as the
+    output intent; the example PDFs in examples/ carry it. Its own copyright
+    tag reads: "Created by Graeme W. Gill. Released into the public domain.
+    No Warranty, Use at your own risk."
